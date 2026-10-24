@@ -56,7 +56,17 @@ gh secret set HARBOR_PASSWORD --repo kareemlukitomo/ci-toolbox
 
 The first workflow step fails with an explicit message when either secret is empty. Without a
 push-capable robot, the Harbor push fails with
-`unauthorized: project infra not found: project infra not found`.
+`unauthorized: unauthorized to access repository: infra/ci-toolbox, action: push`.
+
+### Runner network requirement
+
+Harbor answers only on the LAN. Public DNS resolves `registry.kareem.one` to `140.245.108.16`,
+which serves a different registry behind Caddy with Basic auth, not Harbor. A GitHub-hosted
+runner therefore cannot push. The first step checks that the endpoint answers as Harbor and
+fails with `does not answer as Harbor` instead of a misleading push error.
+
+Use a runner that resolves `registry.kareem.one` to Harbor, or publish from a LAN host with
+`./build.sh`.
 
 ## Build locally
 

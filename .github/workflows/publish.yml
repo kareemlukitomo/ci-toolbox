@@ -43,6 +43,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Check the registry endpoint
+        run: |
+          # Harbor answers /v2/ with a Bearer token challenge. Any other answer means the
+          # runner resolved the registry name to a different service, which is the case
+          # for a GitHub-hosted runner and a split-horizon registry name.
+          challenge="$(curl -sSI "https://${REGISTRY}/v2/" | tr -d '\r' \
+            | awk 'tolower($1)=="www-authenticate:" {sub(/^[^:]*:[ ]*/, ""); print; exit}')"
+          if ! printf '%s' "$challenge" | grep -qi '^Bearer realm='; then
+            echo "::error::${REGISTRY} does not answer as Harbor (no Bearer challenge, got '${challenge}')"
+            echo "Use a runner that resolves ${REGISTRY} to Harbor on the LAN."
+            exit 1
+          fi
+
       - name: Check the registry secrets
         if: ${{ inputs.dry_run != true }}
         env:
