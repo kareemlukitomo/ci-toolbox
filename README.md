@@ -2,10 +2,10 @@
 
 Pinned CI tool binaries for the kareem.one self-hosted runners.
 
-The image bakes each tool once. A runner pulls the image from the local registry instead of
+The image bakes each tool once. A runner pulls one image from the local registry instead of
 downloading eight archives from the public internet on every workflow run.
 
-Tools: trivy, actionlint, gitleaks, bun, kubectl, helm, jq, yq.
+Tools: trivy, actionlint, gitleaks, kubectl, helm, bun, jq, yq.
 
 ## Layout
 
@@ -15,14 +15,52 @@ Tools: trivy, actionlint, gitleaks, bun, kubectl, helm, jq, yq.
 | `/opt/ci-tools/versions.env` | pinned versions and artifact checksums |
 | `/opt/ci-tools/MANIFEST` | tool, version, binary sha256, artifact sha256 |
 
-The image runs as uid 65532 and contains no curl, no package manager use at run time and no
-build tools.
+The image runs as uid 65532. It contains no curl, no package manager at run time and no build
+tools. The only shell is `/bin/sh`, and the entrypoint needs it to copy the tree.
 
-## Build
+## Publish
+
+The push credential for `registry.kareem.one` lives in GitHub Actions secrets, not on an
+operator host. Publishing therefore runs in GitHub Actions.
 
 ```bash
-./build.sh              # build, tag <date-or-tag>-<short sha> and latest, then push
-NO_PUSH=1 ./build.sh    # build and tag only
+gh workflow run publish.yml --repo kareemlukitomo/ci-toolbox
+gh run watch --repo kareemlukitomo/ci-toolbox
+```
+
+`.github/workflows/publish.yml` is manual only (`workflow_dispatch`). It runs on
+`ubuntu-latest`, logs in to `registry.kareem.one`, builds `linux/amd64`, smoke tests the eight
+binaries, and pushes two tags:
+
+- `sha-<12 hex of the built commit>`
+- `latest`
+
+No artifact upload, no cache export to GitHub, no push on `push` or `tag` events. Pass
+`dry_run: true` to build and smoke test without pushing.
+
+The workflow needs two repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `HARBOR_USERNAME` | robot account with push on the Harbor project `infra` |
+| `HARBOR_PASSWORD` | token of that robot account |
+
+Set them once:
+
+```bash
+gh secret set HARBOR_USERNAME --repo kareemlukitomo/ci-toolbox
+gh secret set HARBOR_PASSWORD --repo kareemlukitomo/ci-toolbox
+```
+
+The first workflow step fails with an explicit message when either secret is empty. Without a
+push-capable robot, the Harbor push fails with
+`unauthorized: project infra not found: project infra not found`.
+
+## Build locally
+
+```bash
+NO_PUSH=1 ./build.sh    # build, tag sha-<12 hex> and latest, then stop
+./build.sh              # build, tag, then attempt the push with the local credential
 ```
 
 `build.sh` uses the first engine it finds in this order: docker, podman, buildah. Set
@@ -45,15 +83,25 @@ the file.
 Do not write a digest that you did not compute from the downloaded artifact. Do not write a
 version without its digest.
 
-## Publish
+## Versions in this commit
 
-```bash
-docker login registry.kareem.one   # a robot account with push rights for infra/ci-toolbox
-./build.sh
-```
+| Tool | Version | Source |
+| --- | --- | --- |
+| trivy | 0.70.0 | GitHub release `trivy_0.70.0_Linux-64bit.tar.gz` |
+| actionlint | 1.7.12 | GitHub release `actionlint_1.7.12_linux_amd64.tar.gz` |
+| gitleaks | 8.28.0 | GitHub release `gitleaks_8.28.0_linux_x64.tar.gz` |
+| bun | 1.3.9 | GitHub release `bun-linux-x64-musl.zip` |
+| kubectl | 1.37.1 | `dl.k8s.io` current stable |
+| helm | 4.3.1 | `get.helm.sh` current stable |
+| jq | 1.8.2 | GitHub release `jq-linux-amd64` current stable |
+| yq | 4.54.1 | GitHub release `yq_linux_amd64` current stable |
 
-`build.sh` pushes `<date-or-tag>-<short sha>` and `latest`. It never runs an interactive login
-and never prints a token. A 401 or 403 from the registry stops the script with exit code 3.
+trivy, actionlint, gitleaks and bun match the versions the pt-mahkota workflows pin today.
+
+kubectl 1.37.1 is the current stable release. The TKE cluster server is `v1.34.1-tke.8`, which
+is three minors behind the client and outside the supported one-minor skew. If a CD job reports
+a version skew, rebuild with `KUBECTL_VERSION=1.34.1` and
+`KUBECTL_SHA256=7721f265e18709862655affba5343e85e1980639395d5754473dafaadcaa69e3`.
 
 ## Use in a workflow
 
@@ -121,17 +169,9 @@ trivy 0.70.0 <sha256 of the installed binary> <sha256 of the downloaded archive>
 The third column is the digest that `Containerfile` checks with `sha256sum -c`. The second
 column is the digest of the binary in the image.
 
-## Versions in this commit
+Read the tags that Harbor holds:
 
-| Tool | Version |
-| --- | --- |
-| trivy | 0.70.0 |
-| actionlint | 1.7.12 |
-| gitleaks | 8.28.0 |
-| bun | 1.3.9 |
-| kubectl | 1.34.1 |
-| helm | 4.3.1 |
-| jq | 1.8.2 |
-| yq | 4.54.1 |
-
-kubectl matches the cluster server version `v1.34.1-tke.8` at pin time.
+```bash
+curl -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
+  https://registry.kareem.one/v2/infra/ci-toolbox/tags/list
+```

@@ -5,7 +5,7 @@
 #   NO_PUSH=1 ./build.sh    # build and tag only
 #   ENGINE=podman ./build.sh
 #
-# Tags: <git describe or date>-<short sha> and latest.
+# Tags: sha-<12 hex of HEAD> and latest, the same tags that publish.yml pushes.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -28,9 +28,8 @@ else
 fi
 [[ -n "${ENGINE:-}" ]] || { echo "no docker, podman or buildah found" >&2; exit 1; }
 
-short_sha="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
-base_tag="$(git describe --tags --abbrev=0 2>/dev/null || date -u +%Y%m%d)"
-tag="${base_tag}-${short_sha}"
+short_sha="$(git rev-parse --short=12 HEAD 2>/dev/null || echo nogit)"
+tag="sha-${short_sha}"
 
 echo "engine:  $ENGINE"
 echo "image:   ${IMAGE}:${tag}"

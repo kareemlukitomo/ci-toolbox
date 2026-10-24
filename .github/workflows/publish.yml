@@ -1,0 +1,135 @@
+name: publish
+
+# Manual trigger only. Nothing here runs on push, on a tag, or on a schedule.
+#
+# This workflow exists because the only push-capable Harbor credential for
+# registry.kareem.one lives in GitHub Actions secrets, not on an operator host.
+# It builds the pinned toolbox, smoke tests the eight binaries, and pushes two
+# tags: sha-<12 hex of the built commit> and latest.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   HARBOR_USERNAME  robot account with push on the Harbor project `infra`
+#   HARBOR_PASSWORD  token of that robot account
+#
+# No artifact upload and no cache export to GitHub. The build cache stays local
+# to the runner, which is discarded after the job.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and smoke test, then stop before the push"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+env:
+  REGISTRY: registry.kareem.one
+  IMAGE: registry.kareem.one/infra/ci-toolbox
+
+jobs:
+  publish:
+    name: build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check the registry secrets
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          missing=""
+          if [ -z "${HARBOR_USERNAME:-}" ]; then missing="${missing} HARBOR_USERNAME"; fi
+          if [ -z "${HARBOR_PASSWORD:-}" ]; then missing="${missing} HARBOR_PASSWORD"; fi
+          if [ -n "${missing}" ]; then
+            echo "::error::missing repository secrets:${missing}"
+            echo "Add them before this workflow can push:"
+            echo "  gh secret set HARBOR_USERNAME --repo ${GITHUB_REPOSITORY}"
+            echo "  gh secret set HARBOR_PASSWORD --repo ${GITHUB_REPOSITORY}"
+            exit 1
+          fi
+
+      - name: Check out the built commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compute the tags
+        id: tags
+        run: |
+          short="$(git rev-parse --short=12 HEAD)"
+          echo "sha_tag=sha-${short}" >> "$GITHUB_OUTPUT"
+          echo "Building ${IMAGE}:sha-${short} and ${IMAGE}:latest"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to the registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          build-args: |
+            CI_TOOLBOX_REVISION=${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tags.outputs.sha_tag }}
+            ${{ env.IMAGE }}:latest
+
+      - name: Smoke test the eight tools
+        run: |
+          set -euo pipefail
+          image="${IMAGE}:${{ steps.tags.outputs.sha_tag }}"
+          docker run --rm "$image" trivy --version
+          docker run --rm "$image" actionlint --version
+          docker run --rm "$image" gitleaks version
+          docker run --rm "$image" bun --version
+          docker run --rm "$image" kubectl version --client
+          docker run --rm "$image" helm version
+          docker run --rm "$image" jq --version
+          docker run --rm "$image" yq --version
+          manifest="$(docker run --rm "$image" cat /opt/ci-tools/MANIFEST)"
+          rows="$(printf '%s\n' "$manifest" | grep -vc '^#')"
+          if [ "$rows" -ne 8 ]; then
+            echo "::error::MANIFEST lists ${rows} tools, expected 8"
+            exit 1
+          fi
+          printf '%s\n' "$manifest"
+          if docker run --rm --entrypoint /bin/sh "$image" -c 'command -v curl'; then
+            echo "::error::the runtime image must not contain curl"
+            exit 1
+          fi
+          echo "smoke test passed"
+
+      - name: Push both tags
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          set -euo pipefail
+          image="${IMAGE}:${{ steps.tags.outputs.sha_tag }}"
+          docker push "$image"
+          docker push "${IMAGE}:latest"
+          docker image inspect --format '{{.Id}} {{.Size}} bytes' "$image"
+
+      - name: Summarize
+        run: |
+          {
+            echo "### ci-toolbox"
+            echo ""
+            echo "- image: \`${IMAGE}:${{ steps.tags.outputs.sha_tag }}\`"
+            echo "- also: \`${IMAGE}:latest\`"
+            echo "- commit: \`${{ github.sha }}\`"
+            echo "- dry run: \`${{ inputs.dry_run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
