@@ -32,6 +32,10 @@ concurrency:
 env:
   REGISTRY: registry.kareem.one
   IMAGE: registry.kareem.one/infra/ci-toolbox
+  # buildx uploads a *.dockerbuild record artifact and writes a job summary by
+  # default. This repository keeps no build output on GitHub, so both are off.
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  DOCKER_BUILD_SUMMARY: "false"
 
 jobs:
   publish:
@@ -40,7 +44,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check the registry secrets
-        if: ${{ !inputs.dry_run }}
+        if: ${{ inputs.dry_run != true }}
         env:
           HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
@@ -70,7 +74,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to the registry
-        if: ${{ !inputs.dry_run }}
+        if: ${{ inputs.dry_run != true }}
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -117,7 +121,7 @@ jobs:
           echo "smoke test passed"
 
       - name: Push both tags
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ inputs.dry_run != true }}
         run: |
           set -euo pipefail
           image="${IMAGE}:${{ steps.tags.outputs.sha_tag }}"
