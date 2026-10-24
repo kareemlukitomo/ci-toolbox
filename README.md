@@ -36,7 +36,7 @@ binaries, and pushes two tags:
 - `latest`
 
 No artifact upload, no cache export to GitHub, no push on `push` or `tag` events. Pass
-`dry_run: true` to build and smoke test without pushing.
+`dry_run: true` to build and smoke test without pushing. A dry run needs no secret.
 
 The workflow needs two repository secrets:
 
@@ -151,6 +151,12 @@ argument, it copies the toolbox to that path. With any other argument, it runs t
 a command, so `docker run --rm <image> trivy --version` works.
 
 The copy is additive: it overwrites files with the same name and keeps other files.
+
+The volume must be writable by uid 65532. A Kubernetes `emptyDir` is created with mode 0777 and
+needs no change. A host bind mount is created with the mode of the host directory, so either
+run `chmod 0777` on that directory, set `fsGroup`, or run the initContainer as root with
+`securityContext.runAsUser: 0`. When the volume is not writable, the entrypoint stops with
+exit 73 and prints the required mode.
 
 ## Verify a published image
 

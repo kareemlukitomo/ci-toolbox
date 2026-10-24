@@ -21,8 +21,18 @@ case "$target" in
     ;;
 esac
 
-mkdir -p "$target/bin"
-cp -R /opt/ci-tools/bin/. "$target/bin/"
+if ! mkdir -p "$target/bin" 2>/dev/null; then
+  echo "ci-toolbox: cannot create ${target}/bin" >&2
+  echo "ci-toolbox: the volume must be writable by uid ${CI_TOOLS_UID:-65532}." >&2
+  echo "ci-toolbox: a Kubernetes emptyDir is mode 0777 and works. A host bind mount needs" >&2
+  echo "ci-toolbox: chmod 0777 on the host directory, or fsGroup, or a root initContainer." >&2
+  exit 73
+fi
+
+cp -R /opt/ci-tools/bin/. "$target/bin/" || {
+  echo "ci-toolbox: cannot copy binaries into ${target}/bin" >&2
+  exit 74
+}
 cp /opt/ci-tools/versions.env "$target/versions.env"
 cp /opt/ci-tools/MANIFEST "$target/MANIFEST"
 chmod -R a+rX "$target/bin"
