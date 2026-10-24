@@ -110,8 +110,8 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$manifest"
-          if docker run --rm --entrypoint /bin/sh "$image" -c 'command -v curl'; then
-            echo "::error::the runtime image must not contain curl"
+          if docker run --rm --entrypoint /bin/sh "$image" -c 'command -v curl || command -v wget'; then
+            echo "::error::the runtime image must contain no curl and no wget"
             exit 1
           fi
           echo "smoke test passed"

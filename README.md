@@ -15,8 +15,10 @@ Tools: trivy, actionlint, gitleaks, kubectl, helm, bun, jq, yq.
 | `/opt/ci-tools/versions.env` | pinned versions and artifact checksums |
 | `/opt/ci-tools/MANIFEST` | tool, version, binary sha256, artifact sha256 |
 
-The image runs as uid 65532. It contains no curl, no package manager at run time and no build
-tools. The only shell is `/bin/sh`, and the entrypoint needs it to copy the tree.
+The image runs as uid 65532. It contains no curl, no compiler and no build tools. The runtime
+stage removes the busybox `wget`, `unzip` and `ssl_client` applets, so nothing in the image can
+download a tool at run time. `/bin/sh`, `cp`, `mkdir`, `chmod` and `cat` stay because the
+entrypoint needs them. `apk-tools` stays because it ships in the alpine base; nothing runs it.
 
 ## Publish
 

@@ -91,7 +91,11 @@ RUN set -eu; \
 FROM ${ALPINE_IMAGE} AS runtime
 
 # ca-certificates: trivy and helm need a trust store. libstdc++: bun musl build needs the C++ runtime.
-RUN apk add --no-cache ca-certificates libstdc++
+# The busybox applets for network fetch and archive extraction are removed, so nothing in this
+# image can download a tool at run time. /bin/sh, cp, mkdir, chmod and cat stay: the entrypoint
+# needs them to copy the tree. apk-tools stays because it ships in the alpine base.
+RUN apk add --no-cache ca-certificates libstdc++ \
+    && rm -f /usr/bin/wget /usr/bin/unzip /usr/bin/ssl_client
 
 COPY --chown=65532:65532 --from=fetch /opt/ci-tools /opt/ci-tools
 COPY entrypoint.sh /usr/local/bin/ci-toolbox-init
