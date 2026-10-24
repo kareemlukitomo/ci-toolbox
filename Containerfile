@@ -41,7 +41,7 @@ RUN set -eux; \
       "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
       "${GITLEAKS_SHA256}"; \
     get bun.zip \
-      "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64-musl.zip" \
+      "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64-baseline.zip" \
       "${BUN_SHA256}"; \
     get kubectl \
       "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
@@ -65,7 +65,7 @@ RUN set -eux; \
     unzip -qo bun.zip -d bun; \
     install -m 0755 trivy actionlint gitleaks kubectl jq-linux-amd64 yq_linux_amd64 /opt/ci-tools/bin/; \
     install -m 0755 linux-amd64/helm /opt/ci-tools/bin/helm; \
-    install -m 0755 bun/bun-linux-x64-musl/bun /opt/ci-tools/bin/bun; \
+    install -m 0755 bun/bun-linux-x64-baseline/bun /opt/ci-tools/bin/bun; \
     mv /opt/ci-tools/bin/jq-linux-amd64 /opt/ci-tools/bin/jq; \
     mv /opt/ci-tools/bin/yq_linux_amd64 /opt/ci-tools/bin/yq; \
     rm -rf /src/dl
